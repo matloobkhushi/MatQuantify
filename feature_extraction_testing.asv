@@ -1,0 +1,194 @@
+close all
+% Objects less than this area will be removed.
+AreaThreshold = 25000;
+
+% 24.8447 pixels = 1 micrometre
+scale = 24.8447;
+
+% Open a dialog box to select a folder
+folder_name = uigetdir('H:\All Images\New images\CHC KD\Combined Images');
+
+% Directory of the images
+directory = folder_name;
+
+% List files in directory
+files = dir(fullfile(directory,'*.tif'));
+
+% Name of currently executing M-file
+mfile = mfilename('fullpath');
+
+% Returns the path, file name, and file name extension for the specified FILE
+[PATHSTR,NAME,EXT] = fileparts(mfile); 
+
+% Preallocate array for storing the number of satellite objects found in
+% each image
+sat_count = zeros(1,numel(files));
+
+% Open file
+fileID = fopen('featureData.txt','w');
+
+% Print the headers of the variables to the .txt file
+fprintf(fileID,'%s\t %70s\t %16s\t %8s\t %8s\t %8s\t %1s\t %1s\t %8s\t %8s\t %8s\t %8s\t %8s\t %8s\t %8s\t %8s\t %8s\t %8s\t %8s\t %8s\t %8s\t %8s\t %8s\t %8s\r\n', ...
+    'Image','Area', 'Compactness', 'Contrast', 'Correlation', 'Eccentricity', ...
+    'Energy', 'Entropy', 'EulerNumber', 'Fractal_Dim', 'Homogeneity', ...
+    'Intensity(mean)', 'Intensity(median)', 'Intensity(total)', 'x_width','y_width', ...
+    'Orientation', 'PercentDensity', 'Perimeter', 'Solidity', 'STDev', 'Symmetry*','Extent','Satellites');
+fclose(fileID);
+
+for kk = 1:numel(files)
+    
+    % Name of image file
+    fname = files(kk).name;
+    
+    % Create a string that adds the path/folder to the image filename
+    % Read the image file and the colormap
+    imgFile = imread(strcat(directory,'\', fname));
+    
+    if 
+    % Read the spindle image only (DNA = 1, Spindle = 2)
+    img = imgFile(:,:,2);
+    
+    %% Create binary image and masked image
+    %[ bw, bw2, s, maskedImg ] = mask( imgFile, AreaThreshold );
+    
+    [ bw, bwS, maskedImg, bwmask, s ] = symmetry( imgFile, AreaThreshold);
+    
+    % Loop through each spindle
+    for k = 1:length(s)
+    %figure, imshow(maskedImg_crop,[]);
+    %subplot(5,4,kk);
+    
+    %% Image properties of cropped and rotated images
+    [ t, u, rotatedImage, maskedImg_crop, bw3, grayImage, bw5, ...
+    bwS_cropped ] = spindle( img, maskedImg, s, k, AreaThreshold, bwS );
+    
+    % Calculate coordinates for the major axis' intersection with the
+    % perimeter of the image
+%     xMajor=u.Centroid(1) + [-1 1]*(u.MajorAxisLength/2)*cosd(u.Orientation);
+%     yMajor=u.Centroid(2) + [-1 1]*(u.MajorAxisLength/2)*sind(u.Orientation);
+%     
+%     % Calculate coordinates for the minor axis' intersection with the
+%     % perimeter of the image
+%     xMinor=u.Centroid(1) + [-1 1]*(u.MinorAxisLength/2)*sind(u.Orientation);
+%     yMinor=u.Centroid(2) + [-1 1]*(u.MinorAxisLength/2)*cosd(u.Orientation);
+    
+    % Find the number of rows and columns
+    [rows, cols] = size(rotatedImage);
+
+    %% Analysing symmetry by comparing areas
+    
+    [ area_ratio ] = area_ratios( bwS_cropped );
+    % Centroid y-value
+    %centroid_y = u.Centroid(2);
+    
+    %% Call the area_symmetry function
+    %area_ratio = area_symmetry(centroid_y, rotatedImage, rows, cols);
+
+    %% Other properties of the image
+    
+    % Calculate intensity of pixels
+    intensity = sum(grayImage(:));
+    
+    % Calculate mean intensity
+    meanIntensity = mean(grayImage(:));
+    
+    % Calculate median intensity
+    medianIntensity = median(grayImage(:));
+    
+    % Calculate standard deviation of grayscale values
+    stdImage = std(double(grayImage(:)));
+    
+    % Calculate compactness and store it in the matrix
+    compact = (s(k).Perimeter^2/s(k).Area) - 1;
+    
+    % Calculate entropy of the grayscale image
+    entrop = entropy(grayImage(:));
+    
+    % Compute convex hull
+    %[K,v] = convhull(im2double(maskedImg_crop,'indexed'));
+    
+    %% Percent_density
+    % Calculate percentage density (PD). Number of pixels that have a
+    % greater intensity value than 90% of the maximum intensity value
+    % divided by total area (pixels)
+    % same intensity value as the max intensity value
+    % Call percentageDensity function to calculate the count value
+    [count] = percentageDensity( maskedImg_crop );
+    
+    % Sometimes Area contains more than 1 element, so this function ensures
+    % that we use the highest Area value which is the Area of the spindle
+    if length(extractfield(t,'Area')) > 1    
+        percentDensity = count/max(extractfield(t,'Area'));
+    else
+        percentDensity = count/(max(t.Area));
+    end
+ 
+    %% Gray-Level Co-Occurrence Matrix 
+    
+    % Create the GLCMs
+    glcms = graycomatrix(grayImage);
+    
+    % Derive statistics from the GLCMs using the graycoprops function.
+    stats = graycoprops(glcms,'Contrast Correlation Energy Homogeneity');
+    
+     %% Fractal dimension
+    %fractal = hausDim(bw3);
+    
+    %% Satellite objects
+    [ bww, count ] = satellite(grayImage, s);
+    
+    % Displaying images that have a satellite object
+    if count > 0
+        disp(fname);
+        figure;
+        subplot(1,2,1);
+        imshow(bww);
+        subplot(1,2,2);
+        imshow(img,[]);
+    end
+    % Store the number of satellite objects into an array
+    sat_count(kk) = count;
+    ind = find(sat_count);
+    
+     %% Count Intensity
+    %         [countIntensity, countSkel] = SpindleIntensity(bw, im);
+    %         im(~bw) = 0;
+    %         countIntensity = sum(im(:));
+    %
+    %         bw = bwmorph(im, 'skel', inf);
+    %         countSkel = sum(bw(:));
+    
+    % Output the value of the variables above in a row directly under the
+    % corresponding variables
+    fileID = fopen('featureData.txt','a');
+    fprintf(fileID,'%s\t %8.4f\t %8.4f\t %8.4f\t %8.4f\t %8.4f\t %8.4f\t %8.4f\t %8.4f\t %8.4f\t %8.4f\t %8.4f\t %8.4f\t %8.4f\t %8.4f\t %8.4f\t %8.4f\t %8.4f\t %8.4f\t %8.4f\t %8.4f\t %8.4f\t %8.4f\t %8.4f\r\n', ...
+        strcat(fname, '-', num2str(k)), s(k).Area, compact, stats.Contrast, ...
+        stats.Correlation, s(k).Eccentricity, stats.Energy, entrop, ...
+        s(k).EulerNumber, fractal, stats.Homogeneity, meanIntensity, medianIntensity, ...
+        intensity, s(k).MajorAxisLength, s(k).MinorAxisLength, ...
+        s(k).Orientation, percentDensity, s(k).Perimeter, s(k).Solidity, stdImage, ...
+        area_ratio,u.Extent,sat_count(kk));
+    fclose(fileID);    
+    
+    end
+end
+
+
+
+
+
+ 
+
+
+
+
+
+
+
+
+
+
+
+
+
+

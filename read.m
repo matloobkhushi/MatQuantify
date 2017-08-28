@@ -1,0 +1,2 @@
+
+data = csvread('featureData.txt');
